@@ -22,9 +22,11 @@ import glob
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 import venv
 import zipfile
 from http.client import HTTPSConnection
@@ -33,11 +35,12 @@ from pathlib import Path
 
 # === Config ===
 PYTHON_VERSION = "3.12.2"
-DEFAULT_TARGET_FOLDER = Path.home() / "Desktop" / "myfiles"
+DEFAULT_TARGET_FOLDER = os.environ.get("DEFAULT_TARGET_FOLDER", Path.home() / "Desktop" / "myfiles")
 SEMESTER = "2025"
-GITHUB_PROJECT = f"https://github.com/eng209/eng209_{SEMESTER}"
+GITHUB_PROJECT = os.environ.get("GITHUB_PROJECT", f"https://github.com/eng209/eng209_2025")
 CODE_ARCHIVE = f"{GITHUB_PROJECT}/archive/main.zip"
 COURSE_NAME = f"eng209_{SEMESTER}"
+COURSE_NAME = os.environ.get("COURSE_NAME", f"eng209_2025")
 VENV_DIR = "venv"
 PACKAGES = [
     "ipykernel", "ipywidgets", "jupyterlab-latex", "matplotlib", "plotly",
@@ -52,6 +55,7 @@ VSCODE_EXTENSIONS = {
 }
 # === ===
 
+logger: logging.Logger
 
 
 class LogFormatter(logging.Formatter):
@@ -146,44 +150,15 @@ def run(cmd, verbose=False, **kwargs):
     else:
         return subprocess.run(cmd, check=True, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
 
-def download_github_zip(url, output_filename, max_redirects=5):
+def download_github_zip(url, output_filename):
     logger.info(f"Download archive: {url}")
-    redirects = 0
-    while redirects < max_redirects:
-        parsed_url = urlparse(url)
-        conn = HTTPSConnection(parsed_url.netloc)
-        path = parsed_url.path
-        if parsed_url.query:
-            path += '?' + parsed_url.query
-
-        headers = {
-            "User-Agent": "Client"  # GitHub requires User-Agent
-        }
-
-        conn.request("GET", path, headers=headers)
-        res = conn.getresponse()
-
-        if 300 <= res.status < 400:
-            location = res.getheader("Location")
-            if not location:
-                raise Exception("Redirect without Location header")
-            # Support relative redirects
-            url = urljoin(url, location)
-            redirects += 1
-            continue
-        elif res.status == 200:
-            with open(output_filename, 'wb') as f:
-                while True:
-                    chunk = res.read(8192)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            logger.debug(f"Downloaded ({url}) ({output_filename})")
-            return
-        else:
-            raise Exception(f"HTTP error {url} {res.status} {res.reason}")
-
-    raise Exception(f"Too many redirects {url}")
+    req = urllib.request.Request(url, headers={"User-Agent": "Client"})
+    try:
+        with urllib.request.urlopen(req) as response, open(output_filename, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+        logger.debug(f"Downloaded ({url}) → ({output_filename})")
+    except Exception as e:
+        raise Exception(f"Download failed: {url}\n{e}")
 
 def extract_archive(path, extract_to, overwrite=False, verbose=False):
     import time
