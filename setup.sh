@@ -28,12 +28,18 @@ main() {
 		return 1
 	fi
 
-	[[ -e ${COURSE_FOLDER}/setup.py ]] || "${PYTHON_EXE}" -- <<-EOF
+	"${PYTHON_EXE}" -- <<-EOF
 		import urllib.request
-		urllib.request.urlretrieve('${SETUP_URL}', '${COURSE_FOLDER}/setup.py')
+		import runpy
+		import sys
+
+		url = '${SETUP_URL}'
+		with urllib.request.urlopen(url) as response:
+		    code = response.read()
+		    sys.argv = ['setup.py', '--base', '${COURSE_FOLDER}']
+		    exec(compile(code, url, 'exec'))
 EOF
 
-	"${PYTHON_EXE}" -- "${COURSE_FOLDER}/setup.py" --base "${COURSE_FOLDER}"
 }
 
 main "$@"
